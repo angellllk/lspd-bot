@@ -1,7 +1,7 @@
 package commands
 
 import (
-	"github.com/angellllk/lspd-bot/internal/crawler"
+	"github.com/angellllk/lspd-bot/internal/scraper"
 	"github.com/bwmarrin/discordgo"
 	"log"
 )
@@ -13,45 +13,36 @@ func SyncCommandHandler(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	channel, err := s.Channel(i.ChannelID)
 	if err != nil {
-		errInteraction := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
 				Content: "Error: Could not retrieve channel information.",
 			},
 		})
-		if errInteraction != nil {
-			log.Fatal("can't send interaction response: ", errInteraction)
-		}
 		return
 	}
 
 	if channel.Name != "sync" {
-		errInteraction := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
 				Content: "You can use this only in the #sync channel",
 			},
 		})
-		if errInteraction != nil {
-			log.Fatal("can't send interaction response: ", errInteraction)
-		}
 		return
 	}
 
-	errInteraction := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Content: "Syncing your roles...",
 		},
 	})
-	if errInteraction != nil {
-		log.Fatal("can't send interaction response: ", errInteraction)
-	}
 
-	phpbbRoles, errFetch := crawler.FetchUserRoles(i.Member.User.ID)
+	phpbbRoles, errFetch := scraper.FetchUserGroups(i.Member.Nick, i.Member.User.Username)
 	if errFetch != nil {
 		_, errMsg := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
-			Content: "Error: Could not fetch roles from the forum",
+			Content: "Error: Can't fetch user groups",
 		})
 		if errMsg != nil {
 			log.Fatal("can't send followup message: ", errMsg)

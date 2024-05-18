@@ -4,6 +4,7 @@ import (
 	"github.com/angellllk/lspd-bot/config"
 	"github.com/angellllk/lspd-bot/internal"
 	"github.com/angellllk/lspd-bot/internal/commands"
+	"github.com/angellllk/lspd-bot/internal/scraper"
 	"github.com/bwmarrin/discordgo"
 	"log"
 	"os"
@@ -17,6 +18,11 @@ func main() {
 	token := os.Getenv("DISCORD_BOT_TOKEN")
 	if len(token) == 0 {
 		log.Fatal("no bot token provided")
+	}
+
+	scraper.Password = os.Getenv("PASSWORD")
+	if len(scraper.Password) == 0 {
+		log.Fatal("no scraper password provided")
 	}
 
 	dg, err := discordgo.New("Bot " + token)
