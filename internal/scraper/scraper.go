@@ -17,14 +17,18 @@ const SearchPageURL = "https://lspd.ro-rp.ro/memberlist.php?sk=c&sd=a&form=postf
 const DiscordNameSelector = `//form[@id="viewprofile"]/div/div/dl[@class="left-box details profile-details"]/dt[text()="Discord:"]/following-sibling::dd[1]`
 
 func initScraper() (context.Context, context.CancelFunc, error) {
+	// Define custom options for the Chrome instance
 	options := []chromedp.ExecAllocatorOption{
-		chromedp.Flag("headless", false), // Set to true for headless mode
+		chromedp.Flag("headless", true), // Set to true for headless mode
 		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.9999.999 Safari/537.36"), // Set a custom User-Agent
 		chromedp.NoSandbox,
 	}
 
-	allocCtx, _ := chromedp.NewExecAllocator(context.Background(), options...)
-	ctx, cancel := chromedp.NewContext(allocCtx)
+	// Create a new ExecAllocator with the specified options
+	allocatorCtx, _ := chromedp.NewExecAllocator(context.Background(), options...)
+
+	// Create a new chromedp context using the allocator context
+	ctx, cancel := chromedp.NewContext(allocatorCtx)
 
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(LoginPageURL),
@@ -36,7 +40,8 @@ func initScraper() (context.Context, context.CancelFunc, error) {
 	}
 
 	err = chromedp.Run(ctx,
-		chromedp.Sleep(1*time.Second/2),
+		chromedp.Sleep(1*time.Second),
+		chromedp.WaitVisible("#username", chromedp.ByID),
 		chromedp.Focus("#username", chromedp.ByID),
 		chromedp.SendKeys("#username", "LSPD", chromedp.ByID),
 		chromedp.Focus("#password", chromedp.ByID),
@@ -45,6 +50,7 @@ func initScraper() (context.Context, context.CancelFunc, error) {
 	)
 
 	if err != nil {
+		cancel()
 		return nil, nil, err
 	}
 
@@ -63,6 +69,7 @@ func FetchUserGroups(name string, discord string) ([]string, error) {
 
 	var ret string
 	err = chromedp.Run(ctx,
+		chromedp.WaitVisible("#username_logged_in"),
 		chromedp.Navigate(fmt.Sprintf(SearchPageURL, forQuery)),
 	)
 
@@ -74,8 +81,24 @@ func FetchUserGroups(name string, discord string) ([]string, error) {
 		return nil, errors.New("account not found on the forums")
 	}
 
+	class1 := "username-coloured"
+	class2 := "username"
+	var ok1, ok2 bool
+	err = chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector(".`+class1+`") !== null`, &ok1),
+		chromedp.Evaluate(`document.querySelector(".`+class2+`") !== null`, &ok2),
+	)
+
 	var href string
-	err = chromedp.Run(ctx, chromedp.AttributeValue("#memberlist > tbody > tr > td:nth-child(1) > a.username-coloured", "href", &href, nil))
+	var hrefSelector string
+
+	if ok1 {
+		hrefSelector = fmt.Sprintf("#memberlist > tbody > tr > td:nth-child(1) > a.%s", class1)
+	} else {
+		hrefSelector = fmt.Sprintf("#memberlist > tbody > tr > td:nth-child(1) > a.%s", class2)
+	}
+
+	err = chromedp.Run(ctx, chromedp.AttributeValue(hrefSelector, "href", &href, nil))
 	if err != nil {
 		return nil, errors.New("couldn't get account's URL")
 	}

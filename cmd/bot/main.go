@@ -25,6 +25,11 @@ func main() {
 		log.Fatal("no scraper password provided")
 	}
 
+	commands.GuildId = os.Getenv("GUILD_ID")
+	if len(commands.GuildId) == 0 {
+		log.Fatal("no guild id provided")
+	}
+
 	dg, err := discordgo.New("Bot " + token)
 	if err != nil {
 		log.Fatal("error creating discord session: ", err)
