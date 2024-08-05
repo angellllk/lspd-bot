@@ -18,8 +18,6 @@ func main() {
 		log.Fatal("cannot load config: ", err)
 	}
 
-	scraper.Password = cfg.Password
-
 	dg, err := discordgo.New("Bot " + cfg.BotToken)
 	if err != nil {
 		log.Fatal("error creating discord session: ", err)
@@ -30,7 +28,7 @@ func main() {
 		log.Fatal("error opening connection: ", err)
 	}
 
-	s := scraper.New()
+	s := scraper.New(cfg.Password)
 	ch := commands.CommandHandler{
 		Session: dg,
 		GuildID: cfg.GuildID,

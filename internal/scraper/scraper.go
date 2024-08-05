@@ -11,30 +11,35 @@ import (
 	"time"
 )
 
-// Password is the global password used for logging into the phpBB forum.
-var Password string
-
+// Constant  pre-filled HTTPS addresses.
 const (
 	LoginPageURL        = "https://lspd.ro-rp.ro/ucp.php?mode=login&redirect=index.php"
 	SearchPageURL       = "https://lspd.ro-rp.ro/memberlist.php?sk=c&sd=a&form=postform&field=username_list&username=%s&email=&search_group_id=0&joined_select=lt&active_select=lt&count_select=eq&joined=&active=&count=&ip=&mode=searchuser"
 	DiscordNameSelector = `//form[@id="viewprofile"]/div/div/dl[@class="left-box details profile-details"]/dt[text()="Discord:"]/following-sibling::dd[1]`
 )
 
+const (
+	factionUser = "username-coloured"
+)
+
 // Scraper manages the web scraping process, including login, profile fetching, and role retrieval.
 type Scraper struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	mu     sync.Mutex // Ensures thread safety for context and cache operations
-	cache  map[string]string
+	ctx      context.Context
+	cancel   context.CancelFunc
+	mu       sync.Mutex // Ensures thread safety for context and cache operations
+	cache    Cache
+	password string
 }
 
 // New creates a new Scraper instance.
-func New() *Scraper {
+func New(password string) *Scraper {
 	return &Scraper{
-		ctx:    nil,
-		cancel: nil,
-		mu:     sync.Mutex{},
-		cache:  make(map[string]string),
+		mu: sync.Mutex{},
+		cache: Cache{
+			data: make(map[string]string),
+			mu:   sync.Mutex{},
+		},
+		password: password,
 	}
 }
 
@@ -48,9 +53,8 @@ func (s *Scraper) init() error {
 	}
 
 	// Define options for the Chrome browser.
-	options := []chromedp.ExecAllocatorOption{
-		chromedp.Flag("headless", true),
-		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.9999.999 Safari/537.36"),
+	options := []chromedp.ExecAllocatorOption{chromedp.Flag("headless", true),
+		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (HTML, like Gecko) Chrome/99.0.9999.999 Safari/537.36"),
 		chromedp.NoSandbox,
 	}
 
@@ -62,21 +66,14 @@ func (s *Scraper) init() error {
 	s.cancel = cancel
 
 	// Navigate to the login page and perform login.
-	err := chromedp.Run(ctx,
-		chromedp.Navigate(LoginPageURL),
+	err := chromedp.Run(ctx, chromedp.Navigate(LoginPageURL),
+		chromedp.Sleep(1*time.Second),
 		chromedp.WaitVisible("#login", chromedp.ByID),
-	)
-	if err != nil {
-		return err
-	}
-
-	err = chromedp.Run(ctx,
-		chromedp.Sleep(1*time.Second/2),
-		chromedp.WaitVisible("#username", chromedp.ByID),
+		chromedp.WaitVisible(`#login > fieldset > input.button2.specialbutton`, chromedp.ByQuery),
 		chromedp.Focus("#username", chromedp.ByID),
 		chromedp.SendKeys("#username", "LSPD", chromedp.ByID),
 		chromedp.Focus("#password", chromedp.ByID),
-		chromedp.SendKeys("#password", Password, chromedp.ByID),
+		chromedp.SendKeys("#password", s.password, chromedp.ByID),
 		chromedp.Click(`#login > fieldset > input.button2.specialbutton`, chromedp.ByQuery),
 	)
 	if err != nil {
@@ -86,41 +83,39 @@ func (s *Scraper) init() error {
 	return nil
 }
 
+func parseDiscordName(username string) string {
+	parsedName := strings.Split(username, " ")
+	return parsedName[0] + "+" + parsedName[1]
+}
+
 // getUserProfileURL retrieves the URL of a user's profile based on their username.
 func (s *Scraper) getUserProfileURL(username string) (string, error) {
-	parsedName := strings.Split(username, " ")
-	forQuery := parsedName[0] + "+" + parsedName[1]
+	sepName := parseDiscordName(username)
 
 	var ret string
-	err := chromedp.Run(s.ctx,
-		chromedp.WaitVisible("#username_logged_in"),
-		chromedp.Navigate(fmt.Sprintf(SearchPageURL, forQuery)),
+	err := chromedp.Run(s.ctx, chromedp.WaitVisible("#username_logged_in"),
+		chromedp.Navigate(fmt.Sprintf(SearchPageURL, sepName)),
 	)
 	if err != nil {
 		return "", err
 	}
 
+	// Handle if the user is not registered on the forums.
 	if strings.Compare(ret, "No members found for this search criterion.") == 0 {
 		return "", errors.New("account not found on the forums")
 	}
 
-	class1 := "username-coloured"
-	class2 := "username"
-	var ok1, ok2 bool
+	var ok bool
 	err = chromedp.Run(s.ctx,
-		chromedp.Evaluate(`document.querySelector(".`+class1+`") !== null`, &ok1),
-		chromedp.Evaluate(`document.querySelector(".`+class2+`") !== null`, &ok2),
+		chromedp.Evaluate(`document.querySelector(".`+factionUser+`") !== null`, &ok),
 	)
-
-	var href string
-	var hrefSelector string
-
-	if ok1 {
-		hrefSelector = fmt.Sprintf("#memberlist > tbody > tr > td:nth-child(1) > a.%s", class1)
-	} else {
-		hrefSelector = fmt.Sprintf("#memberlist > tbody > tr > td:nth-child(1) > a.%s", class2)
+	if !ok {
+		return "", errors.New("user doesn't have any forum roles")
 	}
 
+	hrefSelector := fmt.Sprintf("#memberlist > tbody > tr > td:nth-child(1) > a.%s", factionUser)
+
+	var href string
 	err = chromedp.Run(s.ctx, chromedp.AttributeValue(hrefSelector, "href", &href, nil))
 	if err != nil {
 		return "", errors.New("couldn't get account's URL")
@@ -141,10 +136,7 @@ func (s *Scraper) FetchUserGroups(username string, discord string) ([]string, st
 		s.mu.Unlock()
 	}
 
-	s.mu.Lock()
-	profileURL, cached := s.cache[username]
-	s.mu.Unlock()
-
+	profileURL, cached := s.cache.Get(username)
 	if !cached {
 		var err error
 		profileURL, err = s.getUserProfileURL(username)
@@ -152,9 +144,7 @@ func (s *Scraper) FetchUserGroups(username string, discord string) ([]string, st
 			return nil, "", err
 		}
 
-		s.mu.Lock()
-		s.cache[username] = profileURL
-		s.mu.Unlock()
+		s.cache.Set(username, profileURL)
 	}
 
 	var forumDiscord string
@@ -202,10 +192,6 @@ func (s *Scraper) FetchUserGroups(username string, discord string) ([]string, st
 			return nil, "", err
 		}
 	} else {
-
-	}
-
-	if len(rank) == 0 {
 		err = chromedp.Run(s.ctx,
 			chromedp.Text(`dl.left-box > dd:nth-of-type(1)`, &rank, chromedp.ByQuery),
 		)
