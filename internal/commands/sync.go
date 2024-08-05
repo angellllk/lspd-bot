@@ -51,7 +51,7 @@ func updateDiscordRoles(s *discordgo.Session, m *discordgo.Member, GuildId strin
 	for _, roleId := range del {
 		err = s.GuildMemberRoleRemove(GuildId, m.User.ID, roleId)
 		if err != nil {
-			return err
+			log.Printf("error removing role %s: %v", roleId, err)
 		}
 	}
 
@@ -73,5 +73,5 @@ func updateDiscordRoles(s *discordgo.Session, m *discordgo.Member, GuildId strin
 		}
 	}
 
-	return err
+	return nil
 }

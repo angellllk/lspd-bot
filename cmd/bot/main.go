@@ -30,14 +30,16 @@ func main() {
 		log.Fatal("error opening connection: ", err)
 	}
 
+	s := scraper.New()
 	ch := commands.CommandHandler{
 		Session: dg,
 		GuildID: cfg.GuildID,
+		Scraper: s,
 	}
 
-	dg.AddHandler(ch.MessageHandler)
 	dg.AddHandler(ch.SyncCommandHandler)
 
+	internal.CleanupCommands(dg, cfg.GuildID)
 	internal.RegisterCommands(dg, cfg.GuildID)
 
 	log.Println("Bot is running.")
