@@ -28,7 +28,8 @@ func initScraper() (context.Context, context.CancelFunc, error) {
 	allocatorCtx, _ := chromedp.NewExecAllocator(context.Background(), options...)
 
 	// Create a new chromedp context using the allocator context
-	ctx, cancel := chromedp.NewContext(allocatorCtx)
+	ctx, cancel := chromedp.NewContext(allocatorCtx,
+		chromedp.WithLogf(func(s string, i ...interface{}) {}))
 
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(LoginPageURL),

@@ -43,7 +43,7 @@ func main() {
 	dg.AddHandler(commands.MessageHandler)
 	dg.AddHandler(commands.SyncCommandHandler)
 
-	internal.RegisterCommands(dg, "")
+	internal.RegisterCommands(dg, commands.GuildId)
 
 	log.Println("Bot is running.")
 
