@@ -30,9 +30,10 @@ func main() {
 
 	s := scraper.New(cfg.Password)
 	ch := commands.CommandHandler{
-		Session: dg,
-		GuildID: cfg.GuildID,
-		Scraper: s,
+		Session:       dg,
+		GuildID:       cfg.GuildID,
+		SyncChannelID: cfg.SyncChannelID,
+		Scraper:       s,
 	}
 
 	dg.AddHandler(ch.SyncCommandHandler)

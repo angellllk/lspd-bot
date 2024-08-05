@@ -26,6 +26,9 @@ type CommandHandler struct {
 	// GuildID is the identifier for the Discord server where this handler operates.
 	GuildID string
 
+	// SyncChannelID is the identifier for the Discord sync channel.
+	SyncChannelID string
+
 	// Scraper is responsible for fetching data from the phpBB forum.
 	Scraper *scraper.Scraper
 }
@@ -79,7 +82,7 @@ func (c *CommandHandler) HandleSyncCommand(i *discordgo.InteractionCreate) {
 
 	// Ensure the command is issued in the "sync" channel.
 	if channel.Name != "sync" {
-		internal.SendDiscordResponse(c.Session, i.Interaction, "This command can only be used in the <#1238129021162885170> channel.")
+		internal.SendDiscordResponse(c.Session, i.Interaction, fmt.Sprintf("This command can only be used in the <#%s> channel.", c.SyncChannelID))
 		return
 	}
 

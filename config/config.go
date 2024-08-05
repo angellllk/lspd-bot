@@ -7,9 +7,10 @@ import (
 )
 
 type Config struct {
-	BotToken string
-	Password string
-	GuildID  string
+	BotToken      string
+	Password      string
+	GuildID       string
+	SyncChannelID string
 }
 
 func LoadConfig() (*Config, error) {
@@ -19,9 +20,10 @@ func LoadConfig() (*Config, error) {
 	}
 
 	cfg := &Config{
-		BotToken: os.Getenv("DISCORD_BOT_TOKEN"),
-		Password: os.Getenv("PASSWORD"),
-		GuildID:  os.Getenv("GUILD_ID"),
+		BotToken:      os.Getenv("DISCORD_BOT_TOKEN"),
+		Password:      os.Getenv("PASSWORD"),
+		GuildID:       os.Getenv("GUILD_ID"),
+		SyncChannelID: os.Getenv("SYNC_CHANNEL_ID"),
 	}
 
 	if cfg.BotToken == "" || cfg.Password == "" || cfg.GuildID == "" {
