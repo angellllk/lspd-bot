@@ -13,24 +13,14 @@ import (
 )
 
 func main() {
-	config.LoadConfig()
-
-	token := os.Getenv("DISCORD_BOT_TOKEN")
-	if len(token) == 0 {
-		log.Fatal("no bot token provided")
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatal("cannot load config: ", err)
 	}
 
-	scraper.Password = os.Getenv("PASSWORD")
-	if len(scraper.Password) == 0 {
-		log.Fatal("no scraper password provided")
-	}
+	scraper.Password = cfg.Password
 
-	commands.GuildId = os.Getenv("GUILD_ID")
-	if len(commands.GuildId) == 0 {
-		log.Fatal("no guild id provided")
-	}
-
-	dg, err := discordgo.New("Bot " + token)
+	dg, err := discordgo.New("Bot " + cfg.BotToken)
 	if err != nil {
 		log.Fatal("error creating discord session: ", err)
 	}
@@ -40,10 +30,15 @@ func main() {
 		log.Fatal("error opening connection: ", err)
 	}
 
-	dg.AddHandler(commands.MessageHandler)
-	dg.AddHandler(commands.SyncCommandHandler)
+	ch := commands.CommandHandler{
+		Session: dg,
+		GuildID: cfg.GuildID,
+	}
 
-	internal.RegisterCommands(dg, commands.GuildId)
+	dg.AddHandler(ch.MessageHandler)
+	dg.AddHandler(ch.SyncCommandHandler)
+
+	internal.RegisterCommands(dg, cfg.GuildID)
 
 	log.Println("Bot is running.")
 
