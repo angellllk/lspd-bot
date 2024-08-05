@@ -11,6 +11,7 @@ import (
 	"time"
 )
 
+// Password is the global password used for logging into the phpBB forum.
 var Password string
 
 const (
@@ -19,13 +20,15 @@ const (
 	DiscordNameSelector = `//form[@id="viewprofile"]/div/div/dl[@class="left-box details profile-details"]/dt[text()="Discord:"]/following-sibling::dd[1]`
 )
 
+// Scraper manages the web scraping process, including login, profile fetching, and role retrieval.
 type Scraper struct {
 	ctx    context.Context
 	cancel context.CancelFunc
-	mu     sync.Mutex // To ensure thread safety
+	mu     sync.Mutex // Ensures thread safety for context and cache operations
 	cache  map[string]string
 }
 
+// New creates a new Scraper instance.
 func New() *Scraper {
 	return &Scraper{
 		ctx:    nil,
@@ -35,7 +38,8 @@ func New() *Scraper {
 	}
 }
 
-func (s *Scraper) initScraper() error {
+// init initializes the web scraping context and performs the login process.
+func (s *Scraper) init() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -43,18 +47,21 @@ func (s *Scraper) initScraper() error {
 		s.cancel()
 	}
 
+	// Define options for the Chrome browser.
 	options := []chromedp.ExecAllocatorOption{
 		chromedp.Flag("headless", true),
 		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.9999.999 Safari/537.36"),
 		chromedp.NoSandbox,
 	}
 
+	// Create a new Chrome context.
 	allocatorCtx, _ := chromedp.NewExecAllocator(context.Background(), options...)
 	ctx, cancel := chromedp.NewContext(allocatorCtx, chromedp.WithLogf(func(s string, i ...interface{}) {}))
 
 	s.ctx = ctx
 	s.cancel = cancel
 
+	// Navigate to the login page and perform login.
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(LoginPageURL),
 		chromedp.WaitVisible("#login", chromedp.ByID),
@@ -79,6 +86,7 @@ func (s *Scraper) initScraper() error {
 	return nil
 }
 
+// getUserProfileURL retrieves the URL of a user's profile based on their username.
 func (s *Scraper) getUserProfileURL(username string) (string, error) {
 	parsedName := strings.Split(username, " ")
 	forQuery := parsedName[0] + "+" + parsedName[1]
@@ -121,11 +129,12 @@ func (s *Scraper) getUserProfileURL(username string) (string, error) {
 	return href, nil
 }
 
+// FetchUserGroups retrieves the user's forum roles and rank based on their username and Discord ID.
 func (s *Scraper) FetchUserGroups(username string, discord string) ([]string, string, error) {
 	s.mu.Lock()
 	if s.ctx == nil || s.cancel == nil {
 		s.mu.Unlock()
-		if err := s.initScraper(); err != nil {
+		if err := s.init(); err != nil {
 			return nil, "", err
 		}
 	} else {

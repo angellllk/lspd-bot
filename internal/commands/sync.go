@@ -5,15 +5,17 @@ import (
 	"log"
 )
 
+// updateDiscordRoles synchronizes user roles between Discord and a phpBB forum.
+// It ensures that the user's roles on Discord match the roles fetched from the phpBB forum.
 func updateDiscordRoles(s *discordgo.Session, m *discordgo.Member, GuildId string, forumRoles []string) (err error) {
-	// Implement role synchronization logic here
-	// This can involve checking current roles and updating them based on the roles fetched from phpBB
-
+	// Fetch the current roles of the user from Discord.
 	var discordRoles []string
 	roleIds := m.Roles
 
+	// Retrieve all roles in the Discord guild.
 	allRolesIds, _ := s.GuildRoles(GuildId)
 
+	// Map user roles to their names.
 	for _, role := range allRolesIds {
 		for _, memberRole := range roleIds {
 			if role.ID == memberRole {
@@ -23,18 +25,23 @@ func updateDiscordRoles(s *discordgo.Session, m *discordgo.Member, GuildId strin
 		}
 	}
 
+	// Create maps to track roles in both systems.
 	forum := make(map[string]bool, len(forumRoles))
 	disc := make(map[string]bool, len(discordRoles))
 
 	var add, del []string
 
+	// Populate forum roles map.
 	for _, v := range forumRoles {
 		forum[v] = true
 	}
+
+	// Populate Discord roles map.
 	for _, v := range discordRoles {
 		disc[v] = true
 	}
 
+	// Determine roles to add and remove.
 	for k := range forum {
 		if !disc[k] && k != "" {
 			add = append(add, k)
@@ -47,15 +54,16 @@ func updateDiscordRoles(s *discordgo.Session, m *discordgo.Member, GuildId strin
 		}
 	}
 
-	// Remove discord roles not found on the forums
+	// Remove roles that are not found on the forums.
 	for _, roleId := range del {
 		err = s.GuildMemberRoleRemove(GuildId, m.User.ID, roleId)
 		if err != nil {
-			log.Printf("error removing role %s: %v", roleId, err)
+			log.Printf("Error removing role %s: %v", roleId, err)
 		}
 	}
 
 	var addDiscord []string
+	// Map forum roles to Discord role IDs.
 	for _, forumRole := range forumRoles {
 		for _, role := range allRolesIds {
 			if role.Name == forumRole {
@@ -65,11 +73,11 @@ func updateDiscordRoles(s *discordgo.Session, m *discordgo.Member, GuildId strin
 		}
 	}
 
-	// Add forum roles on discord
+	// Add new roles on Discord.
 	for _, roleId := range addDiscord {
 		err = s.GuildMemberRoleAdd(GuildId, m.User.ID, roleId)
 		if err != nil {
-			log.Printf("couldn't add role %s: %v \n", roleId, err)
+			log.Printf("Couldn't add role %s: %v", roleId, err)
 		}
 	}
 

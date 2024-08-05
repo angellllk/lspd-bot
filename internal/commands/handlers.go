@@ -10,37 +10,43 @@ import (
 	"time"
 )
 
+// PhpBB represents the user role information fetched from the phpBB forum.
 type PhpBB struct {
-	Groups []string
-	Rank   string
+	Groups []string // A list of group IDs the user belongs to.
+	Rank   string   // The rank of the user.
 }
 
-// CommandHandler manages specific Discord operations
-// such as handling messages and command interactionc.Session.
+// CommandHandler manages interactions and commands from Discord users.
+// It handles commands like /sync and manages the role synchronization
+// between a phpBB forum and a Discord server.
 type CommandHandler struct {
-	// Session represents the active Discord session.
+	// Session represents the active Discord session used for communication.
 	Session *discordgo.Session
 
-	// GuildID is the identifier for the Discord server where this handler operatec.Session.
+	// GuildID is the identifier for the Discord server where this handler operates.
 	GuildID string
 
+	// Scraper is responsible for fetching data from the phpBB forum.
 	Scraper *scraper.Scraper
 }
 
+// SyncCommandHandler is called when a Discord interaction is received.
+// It dispatches the command to the appropriate handler function.
 func (c *CommandHandler) SyncCommandHandler(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	// Dispatch the command to the appropriate handler
 	go c.DispatchCommand(i)
 }
 
-// DispatchCommand handles Discord messages and determines
-// if they should trigger bot actions. Specifically, it
-// processes messages in the Bot channels and responds
-// to commands with appropriate replies.
+// DispatchCommand handles Discord interactions and determines
+// if they should trigger specific bot actions. It processes interactions
+// and dispatches them to appropriate command handlers.
 func (c *CommandHandler) DispatchCommand(i *discordgo.InteractionCreate) {
 	switch i.ApplicationCommandData().Name {
 	case "sync":
+		// Handle the /sync command
 		go c.HandleSyncCommand(i)
 	default:
+		// Respond to unknown commands
 		err := c.Session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
@@ -53,13 +59,12 @@ func (c *CommandHandler) DispatchCommand(i *discordgo.InteractionCreate) {
 	}
 }
 
-// HandleSyncCommand processes the /sync command from
-// users, synchronizing their roles between a phpBB forum
-// and a Discord server based on their forum role.Session.
-// It manages the flow of syncing roles and responds to the
-// user with appropriate messages throughout the process.Session.
+// HandleSyncCommand processes the /sync command from users.
+// It synchronizes the user's roles between a phpBB forum and a Discord server
+// based on their forum roles. It manages the synchronization flow and sends
+// appropriate messages to the user throughout the process.
 func (c *CommandHandler) HandleSyncCommand(i *discordgo.InteractionCreate) {
-	t := time.Now()
+	startTime := time.Now()
 
 	// Check if the command is /sync.
 	if i.ApplicationCommandData().Name != "sync" {
@@ -78,9 +83,10 @@ func (c *CommandHandler) HandleSyncCommand(i *discordgo.InteractionCreate) {
 		return
 	}
 
+	// Create a channel to communicate the results of the scraping process.
 	ch := make(chan PhpBB, 1)
 	defer close(ch)
-	wg := sync.WaitGroup{}
+	var wg sync.WaitGroup
 	wg.Add(1)
 
 	go func() {
@@ -92,7 +98,7 @@ func (c *CommandHandler) HandleSyncCommand(i *discordgo.InteractionCreate) {
 			c.Session.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 				Content: fmt.Sprintf("Unable to fetch roles from the forum. ||<@%s>||", i.Member.User.ID),
 			})
-			log.Printf("error fetching phpBB roles: %v", errFetch)
+			log.Printf("Error fetching phpBB roles: %v", errFetch)
 			return
 		}
 
@@ -105,6 +111,7 @@ func (c *CommandHandler) HandleSyncCommand(i *discordgo.InteractionCreate) {
 	// Notify the user that the sync process has started.
 	internal.SendDiscordResponse(c.Session, i.Interaction, "Syncing roles...")
 
+	// Wait for the scraping process to complete.
 	wg.Wait()
 	result, ok := <-ch
 	if !ok {
@@ -114,21 +121,21 @@ func (c *CommandHandler) HandleSyncCommand(i *discordgo.InteractionCreate) {
 		return
 	}
 
-	// Update the user's roles on Discord according to forum rolec.Session.
+	// Update the user's roles on Discord according to forum roles.
 	errRoles := updateDiscordRoles(c.Session, i.Member, c.GuildID, result.Groups)
 	if errRoles != nil {
 		c.Session.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
-			Content: fmt.Sprintf("Unable to update Discord role. ||<@%s>||", i.Member.User.ID),
+			Content: fmt.Sprintf("Unable to update Discord roles. ||<@%s>||", i.Member.User.ID),
 		})
 		log.Printf("Error updating Discord roles: %v", errRoles)
 		return
 	}
 
-	ret := time.Now().Sub(t)
+	duration := time.Since(startTime)
 	// Confirm successful role synchronization.
 	content := fmt.Sprintf(`# SYNC SUCCESSFUL
 <@%s> Your roles have been synced. (**%s** %s)
-Duration: %.3fs`, i.Member.User.ID, result.Rank, i.Member.Nick, ret.Seconds())
+Duration: %.3fs`, i.Member.User.ID, result.Rank, i.Member.Nick, duration.Seconds())
 	c.Session.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 		Content: content,
 	})
