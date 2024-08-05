@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"fmt"
+	"github.com/angellllk/lspd-bot/internal"
 	"github.com/angellllk/lspd-bot/internal/scraper"
 	"github.com/bwmarrin/discordgo"
 	"log"
@@ -15,60 +17,37 @@ func SyncCommandHandler(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	channel, err := s.Channel(i.ChannelID)
 	if err != nil {
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "Error: Could not retrieve channel information.",
-			},
-		})
-		return
+		log.Fatalf("can't get channel id: %v", err)
 	}
 
 	if channel.Name != "sync" {
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "You can use this only in the #sync channel",
-			},
-		})
+		internal.SendDiscordResponse(s, i.Interaction, "You can use this only in #sync channel.")
 		return
 	}
 
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: "Syncing your roles...",
-		},
-	})
+	internal.SendDiscordResponse(s, i.Interaction, "Syncing roles...")
 
 	phpbbRoles, errFetch := scraper.FetchUserGroups(i.Member.Nick, i.Member.User.Username)
 	if errFetch != nil {
-		_, errMsg := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
-			Content: "Error: Can't fetch user groups",
+		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+			Content: fmt.Sprintf("Can't fetch roles from forums. ||<@%s>||", i.Member.User.ID),
 		})
-		if errMsg != nil {
-			log.Fatal("can't send followup message: ", errMsg)
-		}
-		return
+		log.Fatalf("couldn't fetch phpbb roles: %v", errFetch)
 	}
 
 	errRoles := updateDiscordRoles(s, i.Member, phpbbRoles)
 	if errRoles != nil {
-		_, errMsg := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
-			Content: "Error: Could not sync roles.",
+		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+			Content: fmt.Sprintf("Can't update Discord roles. ||<@%s>||", i.Member.User.ID),
 		})
-		if errMsg != nil {
-			log.Fatal("can't send followup message: ", errMsg)
-		}
-		return
+		log.Fatalf("couldn't update discord roles: %v", errRoles)
 	}
 
-	_, errMsg := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
-		Content: "Roles synced successfully!",
+	// Edit the original response to indicate that roles have been synced
+	content := fmt.Sprintf("Roles synced. ||<@%s>||", i.Member.User.ID)
+	s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+		Content: content,
 	})
-	if errMsg != nil {
-		log.Fatal("can't send followup message: ", errMsg)
-	}
 }
 
 func updateDiscordRoles(s *discordgo.Session, m *discordgo.Member, forumRoles []string) (err error) {
