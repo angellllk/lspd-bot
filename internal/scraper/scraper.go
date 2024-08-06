@@ -13,8 +13,8 @@ import (
 
 // Constant  pre-filled HTTPS addresses.
 const (
-	LoginPageURL        = "https://lspd.ro-rp.ro/ucp.php?mode=login&redirect=index.php"
-	SearchPageURL       = "https://lspd.ro-rp.ro/memberlist.php?sk=c&sd=a&form=postform&field=username_list&username=%s&email=&search_group_id=0&joined_select=lt&active_select=lt&count_select=eq&joined=&active=&count=&ip=&mode=searchuser"
+	LoginPageURL        = "https://lspd.central-roleplay.ro/ucp.php?mode=login&redirect=index.php"
+	SearchPageURL       = "https://lspd.central-roleplay.ro/memberlist.php?sk=c&sd=a&form=postform&field=username_list&username=%s&email=&search_group_id=0&joined_select=lt&active_select=lt&count_select=eq&joined=&active=&count=&ip=&mode=searchuser"
 	DiscordNameSelector = `//form[@id="viewprofile"]/div/div/dl[@class="left-box details profile-details"]/dt[text()="Discord:"]/following-sibling::dd[1]`
 )
 
@@ -69,12 +69,12 @@ func (s *Scraper) init() error {
 	err := chromedp.Run(ctx, chromedp.Navigate(LoginPageURL),
 		chromedp.Sleep(1*time.Second),
 		chromedp.WaitVisible("#login", chromedp.ByID),
-		chromedp.WaitVisible(`#login > fieldset > input.button2.specialbutton`, chromedp.ByQuery),
+		chromedp.WaitVisible(`#login > div:nth-child(1) > div > div > fieldset > dl:nth-child(7) > dd > input.button1`, chromedp.ByQuery),
 		chromedp.Focus("#username", chromedp.ByID),
-		chromedp.SendKeys("#username", "LSPD", chromedp.ByID),
+		chromedp.SendKeys("#username", "Los Santos Police Department", chromedp.ByID),
 		chromedp.Focus("#password", chromedp.ByID),
 		chromedp.SendKeys("#password", s.password, chromedp.ByID),
-		chromedp.Click(`#login > fieldset > input.button2.specialbutton`, chromedp.ByQuery),
+		chromedp.Click(`#login > div:nth-child(1) > div > div > fieldset > dl:nth-child(7) > dd > input.button1`, chromedp.ByQuery),
 	)
 	if err != nil {
 		return err
@@ -83,17 +83,25 @@ func (s *Scraper) init() error {
 	return nil
 }
 
-func parseDiscordName(username string) string {
-	parsedName := strings.Split(username, " ")
-	return parsedName[0] + "+" + parsedName[1]
+func parseDiscordName(username string) (string, error) {
+	splitNick := strings.Split(username, "/")
+	parsedName := strings.Split(splitNick[0], " ")
+	if len(parsedName) < 2 {
+		return "", errors.New("can't parse name")
+	} else {
+		return parsedName[0] + "+" + parsedName[1], nil
+	}
 }
 
 // getUserProfileURL retrieves the URL of a user's profile based on their username.
 func (s *Scraper) getUserProfileURL(username string) (string, error) {
-	sepName := parseDiscordName(username)
+	sepName, err := parseDiscordName(username)
+	if err != nil {
+		return "", err
+	}
 
 	var ret string
-	err := chromedp.Run(s.ctx, chromedp.WaitVisible("#username_logged_in"),
+	err = chromedp.Run(s.ctx, chromedp.WaitVisible("#username_logged_in"),
 		chromedp.Navigate(fmt.Sprintf(SearchPageURL, sepName)),
 	)
 	if err != nil {
@@ -149,7 +157,7 @@ func (s *Scraper) FetchUserGroups(username string, discord string) ([]string, st
 
 	var forumDiscord string
 	err := chromedp.Run(s.ctx,
-		chromedp.Navigate("https://lspd.ro-rp.ro/"+profileURL[2:]),
+		chromedp.Navigate("https://lspd.central-roleplay.ro/"+profileURL[2:]),
 		chromedp.Text(DiscordNameSelector, &forumDiscord, chromedp.NodeVisible),
 	)
 	if err != nil {
@@ -173,31 +181,13 @@ func (s *Scraper) FetchUserGroups(username string, discord string) ([]string, st
 		}
 	}
 
-	className := "profile-avatar"
-
-	var avatarNode []*cdp.Node
+	var rank string
 	err = chromedp.Run(s.ctx,
-		chromedp.Nodes(fmt.Sprintf(".%s", className), &avatarNode, chromedp.ByQueryAll),
-	)
+		chromedp.WaitVisible(`select[name="g"]`),
+		chromedp.Evaluate(`document.querySelector('select[name="g"] option[selected="selected"]').textContent`,
+			&rank))
 	if err != nil {
 		return nil, "", err
-	}
-
-	var rank string
-	if len(avatarNode) == 0 {
-		err = chromedp.Run(s.ctx,
-			chromedp.Text(`dl.left-box.details.profile-details > dd:nth-of-type(2)`, &rank, chromedp.ByQuery),
-		)
-		if err != nil {
-			return nil, "", err
-		}
-	} else {
-		err = chromedp.Run(s.ctx,
-			chromedp.Text(`dl.left-box > dd:nth-of-type(1)`, &rank, chromedp.ByQuery),
-		)
-		if err != nil {
-			return nil, "", err
-		}
 	}
 
 	return groupIds, rank, nil

@@ -29,10 +29,3 @@ func (c *Cache) Set(name string, profileURL string) {
 
 	c.data[name] = profileURL
 }
-
-// Invalidate removes a key-value pair from the cache.
-func (c *Cache) Invalidate(key string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.data, key)
-}

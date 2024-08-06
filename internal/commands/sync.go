@@ -6,85 +6,35 @@ import (
 )
 
 // updateDiscordRoles manages role synchronization between forum and Discord.
-func updateDiscordRoles(s *discordgo.Session, m *discordgo.Member, GuildId string, forumRoles []string) error {
-	// Fetch the current roles of the user from Discord.
-	discordRoles, err := fetchRoles(s, GuildId, m.Roles)
-	if err != nil {
-		return err
+func updateDiscordRoles(s *discordgo.Session, m *discordgo.Member, GuildId string, forumGroups []string, rolesMap map[string]string) error {
+	requiredRoles := make(map[string]struct{})
+	for _, group := range forumGroups {
+		if roleID, ok := rolesMap[group]; ok {
+			requiredRoles[roleID] = struct{}{}
+		}
 	}
 
-	// Determine which roles need to be added or removed.
-	add, del := determineRoleDifferences(forumRoles, discordRoles)
+	var rolesToAdd []string
+	var rolesToRemove []string
+	currentRolesMap := make(map[string]struct{})
+	for _, roleID := range m.Roles {
+		currentRolesMap[roleID] = struct{}{}
+	}
+
+	for roleID := range requiredRoles {
+		if _, hasRole := currentRolesMap[roleID]; !hasRole {
+			rolesToAdd = append(rolesToAdd, roleID)
+		}
+	}
+
+	for roleID := range currentRolesMap {
+		if _, isRequired := requiredRoles[roleID]; !isRequired {
+			rolesToRemove = append(rolesToRemove, roleID)
+		}
+	}
 
 	// Update the user's roles on Discord.
-	return updateRoles(s, GuildId, m.User.ID, add, del)
-}
-
-// fetchRoles retrieves the current roles for the user and maps them to their names.
-func fetchRoles(s *discordgo.Session, GuildId string, roleIds []string) ([]string, error) {
-	allRoles, err := s.GuildRoles(GuildId)
-	if err != nil {
-		return nil, err
-	}
-
-	roleNames := mapRolesToNames(allRoles, roleIds)
-	return roleNames, nil
-}
-
-// mapRolesToNames maps role IDs to role names.
-func mapRolesToNames(allRoles []*discordgo.Role, roleIds []string) []string {
-	var roleNames []string
-	roleIdSet := make(map[string]bool)
-
-	for _, role := range allRoles {
-		roleIdSet[role.ID] = true
-	}
-
-	for _, memberRole := range roleIds {
-		if roleIdSet[memberRole] {
-			roleNames = append(roleNames, findRoleNameById(allRoles, memberRole))
-		}
-	}
-
-	return roleNames
-}
-
-// findRoleNameById finds the role name by its ID.
-func findRoleNameById(allRoles []*discordgo.Role, roleId string) string {
-	for _, role := range allRoles {
-		if role.ID == roleId {
-			return role.Name
-		}
-	}
-	return ""
-}
-
-// determineRoleDifferences compares forum roles and Discord roles to determine which roles to add or remove.
-func determineRoleDifferences(forumRoles, discordRoles []string) (add, del []string) {
-	forumMap := make(map[string]bool)
-	discordMap := make(map[string]bool)
-
-	for _, role := range forumRoles {
-		forumMap[role] = true
-	}
-
-	for _, role := range discordRoles {
-		discordMap[role] = true
-	}
-
-	for role := range forumMap {
-		if !discordMap[role] && role != "" {
-			add = append(add, role)
-		}
-	}
-
-	for role := range discordMap {
-		if !forumMap[role] && role != "" {
-			del = append(del, role)
-		}
-	}
-
-	return
+	return updateRoles(s, GuildId, m.User.ID, rolesToAdd, rolesToRemove)
 }
 
 // updateRoles updates roles on Discord based on differences with forum roles.
