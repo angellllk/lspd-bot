@@ -34,12 +34,13 @@ func main() {
 		GuildID:       cfg.GuildID,
 		SyncChannelID: cfg.SyncChannelID,
 		Scraper:       s,
+		RolesMap:      cfg.RolesMap,
 	}
 
-	dg.AddHandler(ch.SyncCommandHandler)
+	dg.AddHandler(ch.MessageCreateHandler)
+	dg.AddHandler(ch.InteractionCommandHandler)
 
 	internal.CleanupCommands(dg, cfg.GuildID)
-	internal.RegisterCommands(dg, cfg.GuildID)
 
 	log.Println("Bot is running.")
 

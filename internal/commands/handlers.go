@@ -6,6 +6,7 @@ import (
 	"github.com/angellllk/lspd-bot/internal/scraper"
 	"github.com/bwmarrin/discordgo"
 	"log"
+	"strings"
 	"sync"
 	"time"
 )
@@ -31,12 +32,34 @@ type CommandHandler struct {
 
 	// Scraper is responsible for fetching data from the phpBB forum.
 	Scraper *scraper.Scraper
+
+	// RolesMap is the struct containing the file.json parsed that contains
+	// roles that the Bot works with.
+	RolesMap map[string]string
 }
 
-// SyncCommandHandler is called when a Discord interaction is received.
+func (c *CommandHandler) MessageCreateHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
+	// Ignore all messages created by the bot itself
+	if m.Author.ID == s.State.User.ID {
+		return
+	}
+
+	// Check if the message is in the allowed channel
+	if m.ChannelID != c.SyncChannelID {
+		return
+	}
+
+	// Add your bot's logic here
+	if m.Content != "/sync" {
+		s.ChannelMessageSend(m.ChannelID, "I can't read messages. Use slash (/) commands instead.")
+	}
+}
+
+// InteractionCommandHandler is called when a Discord interaction is received.
 // It dispatches the command to the appropriate handler function.
-func (c *CommandHandler) SyncCommandHandler(s *discordgo.Session, i *discordgo.InteractionCreate) {
+func (c *CommandHandler) InteractionCommandHandler(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	// Dispatch the command to the appropriate handler
+
 	go c.DispatchCommand(i)
 }
 
@@ -47,7 +70,7 @@ func (c *CommandHandler) DispatchCommand(i *discordgo.InteractionCreate) {
 	switch i.ApplicationCommandData().Name {
 	case "sync":
 		// Handle the /sync command
-		go c.HandleSyncCommand(i)
+		go c.SyncCommandHandler(i)
 	default:
 		// Respond to unknown commands
 		err := c.Session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
@@ -62,11 +85,11 @@ func (c *CommandHandler) DispatchCommand(i *discordgo.InteractionCreate) {
 	}
 }
 
-// HandleSyncCommand processes the /sync command from users.
+// SyncCommandHandler processes the /sync command from users.
 // It synchronizes the user's roles between a phpBB forum and a Discord server
 // based on their forum roles. It manages the synchronization flow and sends
 // appropriate messages to the user throughout the process.
-func (c *CommandHandler) HandleSyncCommand(i *discordgo.InteractionCreate) {
+func (c *CommandHandler) SyncCommandHandler(i *discordgo.InteractionCreate) {
 	startTime := time.Now()
 
 	// Check if the command is /sync.
@@ -89,6 +112,7 @@ func (c *CommandHandler) HandleSyncCommand(i *discordgo.InteractionCreate) {
 	// Create a channel to communicate the results of the scraping process.
 	ch := make(chan PhpBB, 1)
 	defer close(ch)
+
 	var wg sync.WaitGroup
 	wg.Add(1)
 
@@ -116,6 +140,7 @@ func (c *CommandHandler) HandleSyncCommand(i *discordgo.InteractionCreate) {
 
 	// Wait for the scraping process to complete.
 	wg.Wait()
+
 	result, ok := <-ch
 	if !ok {
 		c.Session.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
@@ -125,7 +150,7 @@ func (c *CommandHandler) HandleSyncCommand(i *discordgo.InteractionCreate) {
 	}
 
 	// Update the user's roles on Discord according to forum roles.
-	errRoles := updateDiscordRoles(c.Session, i.Member, c.GuildID, result.Groups)
+	errRoles := updateDiscordRoles(c.Session, i.Member, c.GuildID, result.Groups, c.RolesMap)
 	if errRoles != nil {
 		c.Session.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: fmt.Sprintf("Unable to update Discord roles. ||<@%s>||", i.Member.User.ID),
@@ -135,10 +160,11 @@ func (c *CommandHandler) HandleSyncCommand(i *discordgo.InteractionCreate) {
 	}
 
 	duration := time.Since(startTime)
+	igName := strings.Split(i.Member.Nick, "/")
 	// Confirm successful role synchronization.
 	content := fmt.Sprintf(`# SYNC SUCCESSFUL
 <@%s> Your roles have been synced. (**%s** %s)
-Duration: %.3fs`, i.Member.User.ID, result.Rank, i.Member.Nick, duration.Seconds())
+Duration: %.3fs`, i.Member.User.ID, result.Rank, strings.TrimSpace(igName[0]), duration.Seconds())
 	c.Session.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 		Content: content,
 	})
